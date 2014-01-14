@@ -70,6 +70,45 @@ window.CSSRegions = function(scope) {
                 }
             }())
         },
+     
+        reset: function () {
+          //loop over all named flows and revert any document changes caused by CSS region flow changes
+          var flows = document.getNamedFlows(),
+          flowIntoProperty = this.getPrefixedProperty('flow-into');
+          for (a in flows) {
+            for (b in flows[a].regions) {
+              flows[a].regions[b].innerHTML = '';
+            }
+          }
+          //loop over all inactive media queries and revert any document changes caused by CSS region flow changes
+          var rules, parser = new CSSParser();
+          new StyleLoader(function(){
+            return function(stylesheets){
+              window.stylesheets = stylesheets;
+            }
+          }());
+          stylesheets = window.stylesheets;
+          stylesheets.forEach(function (sheet) {
+            parser.parse(sheet.cssText);
+          });
+          rules = parser.cssRules;
+          for (a in rules) {
+            media = rules[a].selectorText.split(/\s/)[0];
+            query = rules[a].identifier;
+            if (!window.matchMedia(query).matches && media) {
+              for (b in rules[a].cssRules) {
+                if (rules[a].cssRules[b].style[flowIntoProperty]) {
+                  selector = rules[a].cssRules[b].selectorText;
+                  for (c in document.querySelectorAll(selector)) {
+                    if (typeof document.querySelectorAll(selector)[c] === 'object') {
+                      document.querySelectorAll(selector)[c].removeAttribute('style');
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         
         setup: function(){
             // Array of NamedFlow objects.
@@ -118,8 +157,23 @@ window.CSSRegions = function(scope) {
             // If there are CSS regions move the content from named flows into region chains
             this.doLayout();  
         },
+
+        getNamedFlowRulesByMediaType: function (cssRules) {
+          //retrieve all CSS rules for active media queries
+          var rules = cssRules;
+          for (a in cssRules) {
+            query = cssRules[a].selectorText.replace('@media', '');
+            if (cssRules[a].selectorText.split(/\s/)[0] === '@media' && window.matchMedia(query).matches) {
+              for (b in cssRules[a].cssRules) {
+                rules.push(cssRules[a].cssRules[b]);
+              }
+            }
+          }
+          return rules;
+        },
         
         getNamedFlowRules: function(cssRules) {
+            cssRules = this.getNamedFlowRulesByMediaType(cssRules);
             var rule, property, value,
                 l = cssRules.length,
                 rules = {},
@@ -1055,6 +1109,8 @@ window.CSSRegions = function(scope) {
         htmlEl.className += " no-regions";
         
         scope.addEventListener("resize", function() {
+            polyfill.reset();
+            polyfill.init();
             window.clearTimeout(timeoutId);
             timeoutId = window.setTimeout(function() {
                 invalidateRegions();
